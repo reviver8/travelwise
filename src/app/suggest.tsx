@@ -12,15 +12,12 @@ import { Card } from '@/components/ui/card';
 import { MapPreview } from '@/components/ui/map-preview';
 import { Segmented } from '@/components/ui/segmented';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
-import { useTrip } from '@/context/trip-context';
+import { errorMessage, useTrip } from '@/context/trip-context';
 import {
   BUDGET_LABEL,
-  CURRENT_USER,
   findPlace,
-  MEMBERS,
   POPULAR_PLACES,
   SUGGEST_TAG_CATEGORY,
-  TRIP,
   type Budget,
   type SuggestTag,
 } from '@/data/trip';
@@ -37,25 +34,21 @@ const TAGS: { value: SuggestTag; icon: IconName }[] = [
 
 const BUDGETS: Budget[] = ['Free', '¥', '¥¥', '¥¥¥'];
 
-// The prototype opens with the storyboard's example already filled in.
-const EXAMPLE = {
-  query: 'Shibuya Sky Observatory',
-  note: 'Incredible sunset skyline views of Shibuya Crossing and Mount Fuji on a clear day! We should reserve the 17:20 rooftop slot early.',
-};
-
 export default function SuggestScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { addIdea } = useTrip();
-  const [query, setQuery] = useState(EXAMPLE.query);
+  const { addIdea, trip, me, isOrganizer } = useTrip();
+  const [query, setQuery] = useState('');
   const [tag, setTag] = useState<SuggestTag>('Sightseeing');
   const [budget, setBudget] = useState<Budget>('¥¥');
-  const [note, setNote] = useState(EXAMPLE.note);
+  const [note, setNote] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
 
   const place = findPlace(query);
   const title = place?.name ?? query.trim();
-  const author = MEMBERS[CURRENT_USER];
-  const isOrganizer = TRIP.organizer === CURRENT_USER;
+  // e.g. "TOKYO '27" from "Tokyo & Kyoto, Japan" ending in 2027.
+  const tripTag = `${trip.destination.split(/[\s,&]/)[0].toUpperCase()} '${trip.endDate.slice(2, 4)}`;
   // The iOS sheet starts below the status bar already; full-screen modals do not.
   const topInset = Platform.OS === 'ios' ? Spacing.four : insets.top + Spacing.three;
 
@@ -65,14 +58,21 @@ export default function SuggestScreen() {
     if (match) setTag(match.tag);
   };
 
-  const submit = () => {
-    addIdea({
-      title,
-      category: SUGGEST_TAG_CATEGORY[tag],
-      price: place?.price ?? BUDGET_LABEL[budget],
-      description: note.trim() || 'No description yet.',
-    });
-    router.back();
+  const submit = async () => {
+    setSaving(true);
+    setError(undefined);
+    try {
+      await addIdea({
+        title,
+        category: SUGGEST_TAG_CATEGORY[tag],
+        price: place?.price ?? BUDGET_LABEL[budget],
+        description: note.trim(),
+      });
+      router.back();
+    } catch (caught) {
+      setError(errorMessage(caught));
+      setSaving(false);
+    }
   };
 
   return (
@@ -81,7 +81,7 @@ export default function SuggestScreen() {
         <ThemedText type="heading" accessibilityRole="header">
           Suggest a Place
         </ThemedText>
-        <Badge label={TRIP.tag} tone="warning" style={styles.headerBadge} />
+        <Badge label={tripTag} tone="warning" style={styles.headerBadge} />
         <View style={styles.flex} />
         <Pressable
           accessibilityRole="button"
@@ -249,9 +249,9 @@ export default function SuggestScreen() {
                 { backgroundColor: theme.backgroundElement, borderColor: theme.border },
               ]}>
               <View style={styles.inline}>
-                <Avatar id={author.id} size={18} />
+                <Avatar member={me} size={18} />
                 <ThemedText type="caption" style={styles.bold}>
-                  {author.name}
+                  {me.name}
                   {isOrganizer ? ' (Organizer)' : ''}
                 </ThemedText>
                 <ThemedText type="caption" themeColor="textSecondary">
@@ -293,6 +293,11 @@ export default function SuggestScreen() {
             paddingBottom: insets.bottom + Spacing.three - 4,
           },
         ]}>
+        {error && (
+          <ThemedText type="caption" themeColor="warning" style={styles.footerError}>
+            {error}
+          </ThemedText>
+        )}
         <View style={styles.footerInner}>
           <Button
             label="Cancel"
@@ -301,9 +306,9 @@ export default function SuggestScreen() {
             style={styles.cancel}
           />
           <Button
-            label="Add to Squad Ideas"
+            label={saving ? 'Adding…' : 'Add to Squad Ideas'}
             icon="plusCircle"
-            disabled={title.length === 0}
+            disabled={title.length === 0 || saving}
             onPress={submit}
             style={styles.submit}
           />
@@ -460,6 +465,11 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.three - 4,
     borderTopWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
+  },
+  footerError: {
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    marginBottom: Spacing.two,
   },
   footerInner: {
     flexDirection: 'row',

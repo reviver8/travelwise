@@ -3,8 +3,11 @@ import * as SplashScreen from 'expo-splash-screen';
 import { Platform, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { StatusOverlay } from '@/components/status-overlay';
 import { Colors } from '@/constants/theme';
-import { TripProvider } from '@/context/trip-context';
+import { AuthProvider, useAuth } from '@/context/auth-context';
+import { TripProvider, useTripState } from '@/context/trip-context';
+import { isSupabaseConfigured } from '@/lib/supabase';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,9 +29,36 @@ export default function RootLayout() {
           border: colors.border,
         },
       }}>
-      <TripProvider>
+      <AuthProvider>
         <AnimatedSplashOverlay />
-        <Stack screenOptions={{ headerShown: false }}>
+        <RootNavigator />
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+function RootNavigator() {
+  const { session } = useAuth();
+  const userId = session?.user.id ?? null;
+
+  // Keyed so trip state resets when a different user signs in or out.
+  return (
+    <TripProvider key={userId ?? 'signed-out'} userId={userId}>
+      <AppStack />
+    </TripProvider>
+  );
+}
+
+function AppStack() {
+  const { loading: authLoading, signOut } = useAuth();
+  const { status, error, refresh } = useTripState();
+  const signedIn = status !== 'signed-out';
+  const hasTrip = status === 'ready';
+
+  return (
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Protected guard={hasTrip}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="suggest"
@@ -39,8 +69,32 @@ export default function RootLayout() {
               sheetCornerRadius: 24,
             }}
           />
-        </Stack>
-      </TripProvider>
-    </ThemeProvider>
+        </Stack.Protected>
+        <Stack.Protected guard={signedIn && !hasTrip}>
+          <Stack.Screen name="welcome" />
+        </Stack.Protected>
+        <Stack.Protected guard={!signedIn}>
+          <Stack.Screen name="sign-in" />
+        </Stack.Protected>
+      </Stack>
+
+      {!isSupabaseConfigured ? (
+        <StatusOverlay
+          title="Connect Supabase"
+          message="Copy .env.example to .env.local, add your project URL and publishable key, then restart the dev server."
+        />
+      ) : authLoading || status === 'loading' ? (
+        <StatusOverlay loading />
+      ) : status === 'error' ? (
+        <StatusOverlay
+          title="Couldn't load your trip"
+          message={error}
+          actions={[
+            { label: 'Try Again', onPress: refresh },
+            { label: 'Sign Out', onPress: () => signOut().catch(() => {}), secondary: true },
+          ]}
+        />
+      ) : null}
+    </>
   );
 }

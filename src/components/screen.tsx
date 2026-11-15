@@ -1,10 +1,14 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/icon';
 import { ThemedText } from '@/components/themed-text';
+import { Avatar } from '@/components/ui/avatar';
 import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
+import { errorMessage, useTrip } from '@/context/trip-context';
+import { confirmAction, showError } from '@/lib/alert';
 import { useTheme } from '@/hooks/use-theme';
 
 type ScreenProps = {
@@ -18,6 +22,8 @@ type ScreenProps = {
 export function Screen({ title, children, floating }: ScreenProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+  const { session, signOut } = useAuth();
+  const { me } = useTrip();
   const tabBarSpace = insets.bottom + BottomTabInset;
 
   return (
@@ -30,9 +36,21 @@ export function Screen({ title, children, floating }: ScreenProps) {
           <ThemedText type="heading" accessibilityRole="header" style={styles.title}>
             {title}
           </ThemedText>
-          <View style={[styles.profile, { backgroundColor: theme.primary }]}>
-            <Icon name="person" size={15} color={theme.onPrimary} />
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Account"
+            hitSlop={8}
+            onPress={() =>
+              confirmAction(
+                'Sign out?',
+                `You're signed in as ${me.name} (${session?.user.email ?? 'unknown email'}).`,
+                'Sign Out',
+                () => signOut().catch((error) => showError('Sign out failed', errorMessage(error)))
+              )
+            }
+            style={({ pressed }) => pressed && styles.pressed}>
+            <Avatar member={me} size={32} />
+          </Pressable>
         </View>
       </View>
 
@@ -102,12 +120,8 @@ const styles = StyleSheet.create({
   title: {
     flex: 1,
   },
-  profile: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
+  pressed: {
+    opacity: 0.7,
   },
   scroll: {
     flex: 1,

@@ -13,9 +13,6 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTrip } from '@/context/trip-context';
 import {
   getPollStats,
-  ITINERARY,
-  MEMBER_ORDER,
-  MEMBERS,
   summarizeDay,
   type ItineraryDay,
   type ItineraryItem,
@@ -31,8 +28,12 @@ const STATUS: Record<ItineraryStatus, { label: string; tone: BadgeTone; icon: 'c
 
 export default function ItineraryScreen() {
   const theme = useTheme();
-  const [dayNumber, setDayNumber] = useState(2);
-  const day = ITINERARY.find((entry) => entry.day === dayNumber) ?? ITINERARY[0];
+  const { itinerary } = useTrip();
+  // Start on the first day that has plans.
+  const [dayNumber, setDayNumber] = useState(
+    () => itinerary.find((entry) => entry.items.length > 0)?.day ?? 1
+  );
+  const day = itinerary.find((entry) => entry.day === dayNumber) ?? itinerary[0];
 
   return (
     <Screen title="Itinerary">
@@ -41,7 +42,7 @@ export default function ItineraryScreen() {
         showsHorizontalScrollIndicator={false}
         style={styles.dayScroll}
         contentContainerStyle={styles.days}>
-        {ITINERARY.map((entry) => {
+        {itinerary.map((entry) => {
           const selected = entry.day === day.day;
           return (
             <Pressable
@@ -95,14 +96,16 @@ function EmptyDay({ day }: { day: ItineraryDay }) {
 
 function DayPlan({ day }: { day: ItineraryDay }) {
   const theme = useTheme();
+  const { members } = useTrip();
 
   return (
     <>
       <View style={styles.dayHeader}>
         <ThemedText type="display" style={styles.dayTitle}>
-          Day {day.day}: {day.title}
+          Day {day.day}
+          {day.title ? `: ${day.title}` : ` · ${day.date}`}
         </ThemedText>
-        <AvatarStack ids={MEMBER_ORDER} size={26} max={3} />
+        <AvatarStack members={members} size={26} max={3} />
       </View>
       <View style={styles.dayStats}>
         <Icon name="checkCircle" size={13} color={theme.primary} />
@@ -114,7 +117,7 @@ function DayPlan({ day }: { day: ItineraryDay }) {
         </ThemedText>
         <Icon name="group" size={13} color={theme.textSecondary} />
         <ThemedText type="mono" themeColor="textSecondary">
-          {MEMBER_ORDER.length} squad members
+          {members.length} squad {members.length === 1 ? 'member' : 'members'}
         </ThemedText>
       </View>
 
@@ -122,15 +125,15 @@ function DayPlan({ day }: { day: ItineraryDay }) {
         <View style={styles.inline}>
           <Icon name="route" size={12} color={theme.textSecondary} />
           <ThemedText type="mono" themeColor="textSecondary">
-            DAY {day.day} ROUTE PATH • {day.routeKm} km total
+            DAY {day.day} ROUTE PATH{day.routeKm ? ` • ${day.routeKm} km total` : ''}
           </ThemedText>
         </View>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.stops}>
-          {day.stops.map((stop, index) => (
-            <View key={stop} style={styles.inline}>
+          {day.items.map(({ id, stopLabel: stop }, index) => (
+            <View key={id} style={styles.inline}>
               {index > 0 && <Icon name="arrowRight" size={10} color={theme.textSecondary} />}
               <View style={[styles.stop, { backgroundColor: theme.surface }]}>
                 <View style={[styles.stopNumber, { backgroundColor: theme.primary }]}>
@@ -161,7 +164,8 @@ function TimelineItem({ item, isLast }: { item: ItineraryItem; isLast: boolean }
   const status = STATUS[item.status];
   const pending = item.status === 'pending';
   const dotColor = pending ? theme.warning : theme.primary;
-  const author = MEMBERS[item.note.by];
+  const { memberById } = useTrip();
+  const author = item.note ? memberById(item.note.by) : undefined;
 
   return (
     <View style={styles.timelineRow}>
@@ -198,15 +202,17 @@ function TimelineItem({ item, isLast }: { item: ItineraryItem; isLast: boolean }
 
           {pending && <VotingStatus />}
 
-          <View style={[styles.note, { backgroundColor: theme.backgroundElement }]}>
-            <Avatar id={author.id} size={18} />
-            <ThemedText type="caption" style={styles.noteText}>
-              “{item.note.text}”
-            </ThemedText>
-            <ThemedText type="caption" style={[styles.bold, { color: author.color }]}>
-              {author.name}
-            </ThemedText>
-          </View>
+          {item.note && author && (
+            <View style={[styles.note, { backgroundColor: theme.backgroundElement }]}>
+              <Avatar member={author} size={18} />
+              <ThemedText type="caption" style={styles.noteText}>
+                “{item.note.text}”
+              </ThemedText>
+              <ThemedText type="caption" style={[styles.bold, { color: author.color }]}>
+                {author.name}
+              </ThemedText>
+            </View>
+          )}
         </Card>
 
         {item.transitAfter && (
@@ -226,8 +232,9 @@ function TimelineItem({ item, isLast }: { item: ItineraryItem; isLast: boolean }
 /** Live poll summary shown on itinerary items that are still being voted on. */
 function VotingStatus() {
   const theme = useTheme();
-  const { votes } = useTrip();
-  const poll = getPollStats(votes);
+  const { poll: currentPoll, votes, memberIds } = useTrip();
+  if (!currentPoll) return null;
+  const poll = getPollStats(currentPoll, votes, memberIds);
 
   return (
     <Pressable

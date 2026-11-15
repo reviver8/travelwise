@@ -10,10 +10,8 @@ import { Card } from '@/components/ui/card';
 import { MapPreview } from '@/components/ui/map-preview';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTrip } from '@/context/trip-context';
-import { getPollStats, ITINERARY, MEMBER_ORDER, MEMBERS, summarizeDay, TRIP } from '@/data/trip';
+import { formatTripDates, isPollOpen, summarizeDay, tripLength } from '@/data/trip';
 import { useTheme } from '@/hooks/use-theme';
-
-const FEATURED_DAY = ITINERARY[1];
 
 const MAP_PINS = [
   { id: 'shinjuku', x: 26, y: 34, label: 'Shinjuku' },
@@ -23,12 +21,17 @@ const MAP_PINS = [
 
 export default function OverviewScreen() {
   const theme = useTheme();
-  const { ideas, votes } = useTrip();
-  const poll = getPollStats(votes);
-  const openVotes = poll.voted < poll.total ? 1 : 0;
+  const { trip, members, ideas, poll, itinerary } = useTrip();
+  const { days, nights } = tripLength(trip);
+  const organizer = members.find((member) => member.role === 'organizer');
+  const openVotes = poll && isPollOpen(poll) ? 1 : 0;
+  // Feature the first day that has plans.
+  const featuredDay = itinerary.find((day) => day.items.length > 0) ?? itinerary[0];
 
   const invite = () => {
-    Share.share({ message: `Join our group trip on TravelWise: ${TRIP.name}` }).catch(() => {});
+    Share.share({
+      message: `Join "${trip.name}" on TravelWise with invite code ${trip.inviteCode}`,
+    }).catch(() => {});
   };
 
   return (
@@ -36,7 +39,7 @@ export default function OverviewScreen() {
       <View style={[styles.tripChip, { backgroundColor: theme.backgroundSelected }]}>
         <View style={[styles.tripDot, { backgroundColor: theme.primary }]} />
         <ThemedText type="caption" style={styles.bold}>
-          {TRIP.name}
+          {trip.name}
         </ThemedText>
         <Icon name="chevronDown" size={10} color={theme.textSecondary} />
       </View>
@@ -47,17 +50,18 @@ export default function OverviewScreen() {
           <ThemedText type="mono" themeColor="primary">
             GROUP TRIP
           </ThemedText>
-          <ThemedText type="display">{TRIP.destination}</ThemedText>
+          <ThemedText type="display">{trip.destination}</ThemedText>
           <View style={styles.heroMeta}>
             <Icon name="calendar" size={14} color={theme.textSecondary} />
             <ThemedText type="caption" themeColor="textSecondary">
-              {TRIP.dates}
+              {formatTripDates(trip)}
             </ThemedText>
             <ThemedText type="caption" themeColor="textSecondary">
               •
             </ThemedText>
             <ThemedText type="caption" themeColor="textSecondary" style={styles.flex}>
-              {TRIP.days} Days · {TRIP.nights} Nights · {MEMBER_ORDER.length} Trip Members
+              {days} Days · {nights} Nights · {members.length} Trip{' '}
+              {members.length === 1 ? 'Member' : 'Members'}
             </ThemedText>
           </View>
         </View>
@@ -65,7 +69,7 @@ export default function OverviewScreen() {
 
       <SectionHeader
         title="Trip Members"
-        badge={<Badge label={String(MEMBER_ORDER.length)} />}
+        badge={<Badge label={String(members.length)} />}
         trailing={
           <Pressable
             accessibilityRole="button"
@@ -80,10 +84,17 @@ export default function OverviewScreen() {
         }
       />
       <Card style={styles.membersCard}>
-        <AvatarStack ids={MEMBER_ORDER} size={40} />
-        <ThemedText type="caption" themeColor="textSecondary">
-          Organizer: {MEMBERS[TRIP.organizer].name}
-        </ThemedText>
+        <AvatarStack members={members} size={40} max={6} />
+        <View style={styles.membersMeta}>
+          {organizer && (
+            <ThemedText type="caption" themeColor="textSecondary">
+              Organizer: {organizer.name}
+            </ThemedText>
+          )}
+          <ThemedText type="mono" themeColor="textSecondary" selectable>
+            Invite code: {trip.inviteCode}
+          </ThemedText>
+        </View>
       </Card>
 
       <SectionHeader
@@ -115,9 +126,9 @@ export default function OverviewScreen() {
           href="/itinerary"
           icon="calendar"
           title="Itinerary"
-          badge={`Day ${FEATURED_DAY.day}`}
+          badge={`Day ${featuredDay.day}`}
           badgeTone="neutral"
-          subtitle={`View your trip schedule · Day ${FEATURED_DAY.day}: ${summarizeDay(FEATURED_DAY)}`}
+          subtitle={`View your trip schedule · Day ${featuredDay.day}: ${summarizeDay(featuredDay)}`}
         />
       </View>
 
@@ -144,7 +155,7 @@ export default function OverviewScreen() {
             Tokyo Exploration Map
           </ThemedText>
           <ThemedText type="caption" themeColor="textSecondary">
-            {TRIP.areasMapped} areas mapped
+            {MAP_PINS.length} areas mapped
           </ThemedText>
         </View>
       </Card>
@@ -274,6 +285,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  membersMeta: {
+    alignItems: 'flex-end',
+    gap: Spacing.one,
+    flexShrink: 1,
   },
   actions: {
     gap: Spacing.two,

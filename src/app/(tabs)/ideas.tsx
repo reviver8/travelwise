@@ -12,8 +12,9 @@ import { Card } from '@/components/ui/card';
 import { MapPreview } from '@/components/ui/map-preview';
 import { Segmented } from '@/components/ui/segmented';
 import { Radius, Spacing } from '@/constants/theme';
-import { useTrip } from '@/context/trip-context';
-import { IDEA_CATEGORIES, MEMBERS, type Idea, type IdeaCategory } from '@/data/trip';
+import { errorMessage, useTrip } from '@/context/trip-context';
+import { IDEA_CATEGORIES, type Idea, type IdeaCategory } from '@/data/trip';
+import { showError } from '@/lib/alert';
 import { useTheme } from '@/hooks/use-theme';
 
 type ViewMode = 'cards' | 'map';
@@ -140,7 +141,13 @@ export default function IdeasScreen() {
 
 function IdeaCard({ idea }: { idea: Idea }) {
   const theme = useTheme();
-  const { toggleLike, proposeIdea } = useTrip();
+  const { toggleLike, proposeIdea, memberById } = useTrip();
+  const author = memberById(idea.addedBy);
+
+  const like = () =>
+    toggleLike(idea.id).catch((error) => showError("Couldn't update like", errorMessage(error)));
+  const propose = () =>
+    proposeIdea(idea.id).catch((error) => showError("Couldn't propose idea", errorMessage(error)));
 
   return (
     <Card style={styles.ideaCard}>
@@ -164,9 +171,9 @@ function IdeaCard({ idea }: { idea: Idea }) {
       </ThemedText>
 
       <View style={styles.addedBy}>
-        <Avatar id={idea.addedBy} size={18} />
+        <Avatar member={author} size={18} />
         <ThemedText type="caption" style={styles.bold}>
-          Added by {MEMBERS[idea.addedBy].name}
+          Added by {author.name}
         </ThemedText>
       </View>
 
@@ -176,7 +183,7 @@ function IdeaCard({ idea }: { idea: Idea }) {
           accessibilityLabel={idea.likedByMe ? 'Remove like' : 'Like'}
           accessibilityState={{ selected: idea.likedByMe }}
           hitSlop={10}
-          onPress={() => toggleLike(idea.id)}
+          onPress={like}
           style={({ pressed }) => [styles.like, pressed && styles.pressed]}>
           <Icon
             name={idea.likedByMe ? 'heartFill' : 'heart'}
@@ -212,7 +219,7 @@ function IdeaCard({ idea }: { idea: Idea }) {
             icon="vote"
             variant="outline"
             size="small"
-            onPress={() => proposeIdea(idea.id)}
+            onPress={propose}
           />
         )}
         {idea.status === 'proposed' && <Badge label="Proposed for Vote" icon="check" tone="info" />}

@@ -1,17 +1,18 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { MEMBERS, type MemberId } from '@/data/trip';
+import type { Member } from '@/data/trip';
 import { useTheme } from '@/hooks/use-theme';
 
+type AvatarMember = Pick<Member, 'name' | 'color'>;
+
 type AvatarProps = {
-  id: MemberId;
+  member: AvatarMember;
   size?: number;
   style?: StyleProp<ViewStyle>;
 };
 
-export function Avatar({ id, size = 24, style }: AvatarProps) {
+export function Avatar({ member, size = 24, style }: AvatarProps) {
   const theme = useTheme();
-  const member = MEMBERS[id];
 
   return (
     <View
@@ -27,28 +28,35 @@ export function Avatar({ id, size = 24, style }: AvatarProps) {
         },
         style,
       ]}>
-      <Text style={[styles.initial, { fontSize: size * 0.45 }]}>{member.name[0]}</Text>
+      <Text style={[styles.initial, { fontSize: size * 0.45 }]}>
+        {member.name.charAt(0).toUpperCase()}
+      </Text>
     </View>
   );
 }
 
 type AvatarStackProps = {
-  ids: MemberId[];
+  members: (AvatarMember & { id: string })[];
   size?: number;
   /** Show at most this many avatars, then a "+N" bubble. */
   max?: number;
 };
 
-export function AvatarStack({ ids, size = 24, max = ids.length }: AvatarStackProps) {
+export function AvatarStack({ members, size = 24, max = members.length }: AvatarStackProps) {
   const theme = useTheme();
-  const visible = ids.slice(0, max);
-  const extra = ids.length - visible.length;
+  const visible = members.slice(0, max);
+  const extra = members.length - visible.length;
   const overlap = -size * 0.3;
 
   return (
     <View style={styles.stack}>
-      {visible.map((id, index) => (
-        <Avatar key={id} id={id} size={size} style={index > 0 && { marginLeft: overlap }} />
+      {visible.map((member, index) => (
+        <Avatar
+          key={member.id}
+          member={member}
+          size={size}
+          style={index > 0 && { marginLeft: overlap }}
+        />
       ))}
       {extra > 0 && (
         <View

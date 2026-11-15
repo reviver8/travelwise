@@ -1,32 +1,20 @@
 /**
- * Mock data for the Sprint 3 prototype. Replace with real trip data once a backend exists.
+ * App-side models for trip data, plus formatting helpers.
+ * Rows are loaded from Supabase in `src/lib/trip-api.ts` and mapped into these shapes.
  */
 
-export type MemberId = 'cardin' | 'grant' | 'tedy' | 'marcus';
+export type Role = 'organizer' | 'member';
 
-export type Member = { id: MemberId; name: string; color: string };
+export type Member = { id: string; name: string; color: string; role: Role };
 
-export const MEMBERS: Record<MemberId, Member> = {
-  cardin: { id: 'cardin', name: 'Cardin', color: '#00796B' },
-  grant: { id: 'grant', name: 'Grant', color: '#E8590C' },
-  tedy: { id: 'tedy', name: 'Tedy', color: '#2F6FED' },
-  marcus: { id: 'marcus', name: 'Marcus', color: '#2E9E6B' },
-};
-
-export const MEMBER_ORDER: MemberId[] = ['cardin', 'grant', 'tedy', 'marcus'];
-
-/** The prototype is shown from the organizer's point of view. */
-export const CURRENT_USER: MemberId = 'cardin';
-
-export const TRIP = {
-  name: 'Tokyo & Kyoto 2027',
-  destination: 'Tokyo & Kyoto, Japan',
-  dates: 'May 14 – 22, 2027',
-  days: 9,
-  nights: 8,
-  organizer: 'cardin' as MemberId,
-  tag: "TOKYO '27",
-  areasMapped: 3,
+export type Trip = {
+  id: string;
+  name: string;
+  destination: string;
+  /** ISO dates, e.g. "2027-05-14". */
+  startDate: string;
+  endDate: string;
+  inviteCode: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -51,7 +39,7 @@ export type Idea = {
   category: IdeaCategory;
   price: string;
   description: string;
-  addedBy: MemberId;
+  addedBy: string;
   likes: number;
   likedByMe: boolean;
   status: IdeaStatus;
@@ -59,183 +47,8 @@ export type Idea = {
   map: { x: number; y: number };
 };
 
-export const INITIAL_IDEAS: Idea[] = [
-  {
-    id: 'teamlab',
-    title: 'teamLab Planets Tokyo',
-    category: 'Entertainment',
-    price: '¥3,800 – ¥4,200',
-    description:
-      'Immersive sensory water and crystal light rooms. Reserved timed-entry pass recommended.',
-    addedBy: 'cardin',
-    likes: 4,
-    likedByMe: true,
-    status: 'poll',
-    map: { x: 72, y: 66 },
-  },
-  {
-    id: 'tsukiji',
-    title: 'Tsukiji Outer Market Food Tour',
-    category: 'Food & Drink',
-    price: '¥1,500 – ¥3,000',
-    description:
-      'Fresh sashimi skewers, warm tamagoyaki egg omelets, and traditional morning street vendors.',
-    addedBy: 'grant',
-    likes: 3,
-    likedByMe: true,
-    status: 'confirmed',
-    map: { x: 60, y: 54 },
-  },
-  {
-    id: 'thrift',
-    title: 'Vintage Thrift & Record Crawl',
-    category: 'Shopping',
-    price: 'Free – ¥3,000',
-    description:
-      'Curated retro boutiques, independent vinyl listening stations, and relaxed cafe alleyways.',
-    addedBy: 'tedy',
-    likes: 2,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 22, y: 52 },
-  },
-  {
-    id: 'omoide',
-    title: 'Omoide Yokocho & Sunset',
-    category: 'Food & Drink',
-    price: '¥2,000 – ¥4,000',
-    description:
-      'Golden hour panoramic observatory followed by skewers and drinks in cozy lantern-lit lanes.',
-    addedBy: 'marcus',
-    likes: 3,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 28, y: 30 },
-  },
-  {
-    id: 'mori',
-    title: 'Mori Art Museum & Sky Deck',
-    category: 'Attractions',
-    price: '¥2,000 – ¥2,500',
-    description: 'Contemporary art in Roppongi Hills with an open-air deck facing Tokyo Tower.',
-    addedBy: 'tedy',
-    likes: 2,
-    likedByMe: false,
-    status: 'poll',
-    map: { x: 44, y: 58 },
-  },
-  {
-    id: 'akihabara',
-    title: 'Akihabara Retro Gaming Crawl',
-    category: 'Entertainment',
-    price: '¥1,000 – ¥3,000',
-    description: 'Multi-floor arcades, retro game shops, and electronics alleys in Chiyoda.',
-    addedBy: 'marcus',
-    likes: 1,
-    likedByMe: false,
-    status: 'poll',
-    map: { x: 62, y: 24 },
-  },
-  {
-    id: 'toyosu-lunch',
-    title: 'Seafood Lunch at Toyosu Senkyaku Banrai',
-    category: 'Food & Drink',
-    price: '¥2,000 – ¥3,500',
-    description: 'Edo-style market dining hall next to the Toyosu fish market.',
-    addedBy: 'grant',
-    likes: 3,
-    likedByMe: false,
-    status: 'confirmed',
-    map: { x: 76, y: 58 },
-  },
-  {
-    id: 'odaiba',
-    title: 'Odaiba Sunset Walk & Deck Dinner',
-    category: 'Outdoors',
-    price: '¥2,500 – ¥5,000',
-    description: 'Bayside walk with Rainbow Bridge skyline views, then dinner at DECKS Tokyo Beach.',
-    addedBy: 'tedy',
-    likes: 2,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 64, y: 82 },
-  },
-  {
-    id: 'meiji',
-    title: 'Meiji Jingu Morning Walk',
-    category: 'Outdoors',
-    price: 'Free',
-    description: 'Quiet forested shrine grounds a few minutes from Harajuku Station.',
-    addedBy: 'cardin',
-    likes: 2,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 18, y: 40 },
-  },
-  {
-    id: 'sensoji',
-    title: 'Senso-ji & Nakamise Street',
-    category: 'Attractions',
-    price: 'Free – ¥1,000',
-    description: "Tokyo's oldest temple and its snack-lined approach in Asakusa.",
-    addedBy: 'marcus',
-    likes: 3,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 78, y: 16 },
-  },
-  {
-    id: 'shimokita',
-    title: 'Shimokitazawa Live Music Night',
-    category: 'Entertainment',
-    price: '¥2,500 – ¥4,000',
-    description: 'Small live houses and late-night bars in a walkable neighborhood.',
-    addedBy: 'marcus',
-    likes: 1,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 10, y: 64 },
-  },
-  {
-    id: 'fushimi',
-    title: 'Fushimi Inari Sunrise Hike',
-    category: 'Outdoors',
-    price: 'Free',
-    description: 'Walk the torii gate trail in Kyoto before the crowds arrive.',
-    addedBy: 'grant',
-    likes: 4,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 36, y: 84 },
-  },
-  {
-    id: 'nishiki',
-    title: 'Nishiki Market Tasting',
-    category: 'Food & Drink',
-    price: '¥1,500 – ¥3,000',
-    description: "Graze through Kyoto's covered market: pickles, mochi, and grilled skewers.",
-    addedBy: 'tedy',
-    likes: 2,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 46, y: 76 },
-  },
-  {
-    id: 'arashiyama',
-    title: 'Arashiyama Bamboo Grove',
-    category: 'Outdoors',
-    price: 'Free',
-    description: 'Bamboo paths and riverside views on the west side of Kyoto.',
-    addedBy: 'cardin',
-    likes: 3,
-    likedByMe: false,
-    status: 'open',
-    map: { x: 14, y: 84 },
-  },
-];
-
 // ---------------------------------------------------------------------------
-// Decisions
+// Polls
 // ---------------------------------------------------------------------------
 
 export type PollOption = {
@@ -246,59 +59,53 @@ export type PollOption = {
   subtitle: string;
 };
 
-export const POLL = {
-  id: 'saturday-afternoon',
-  question: 'Where should we spend Saturday afternoon (2:00 PM – 5:00 PM)?',
-  createdBy: 'cardin' as MemberId,
-  closesIn: '4h',
-  options: [
-    {
-      id: 'teamlab',
-      title: 'teamLab Planets',
-      category: 'Entertainment',
-      area: 'Toyosu',
-      subtitle: 'Digital Art & Waterfront',
-    },
-    {
-      id: 'mori',
-      title: 'Mori Art Museum & Sky Deck',
-      category: 'Attractions',
-      area: 'Roppongi Hills',
-      subtitle: 'Contemporary Art & Tokyo Tower Skyline',
-    },
-    {
-      id: 'akihabara',
-      title: 'Akihabara Retro Gaming Crawl',
-      category: 'Entertainment',
-      area: 'Chiyoda',
-      subtitle: 'Arcades & Electronics',
-    },
-  ] satisfies PollOption[],
+export type Poll = {
+  id: string;
+  question: string;
+  createdBy: string;
+  /** ISO timestamp. */
+  closesAt: string;
+  options: PollOption[];
 };
 
-export type Votes = Partial<Record<MemberId, string>>;
+/** User id → option id. */
+export type Votes = Record<string, string>;
 
-export const INITIAL_VOTES: Votes = {
-  cardin: 'teamlab',
-  marcus: 'teamlab',
-  tedy: 'mori',
-};
+export function isPollOpen(poll: Poll, now = Date.now()) {
+  return new Date(poll.closesAt).getTime() > now;
+}
 
-export function getPollStats(votes: Votes) {
-  const total = MEMBER_ORDER.length;
-  const voted = MEMBER_ORDER.filter((id) => votes[id]).length;
-  const options = POLL.options.map((option) => {
-    const voters = MEMBER_ORDER.filter((id) => votes[id] === option.id);
+export function getPollStats(poll: Poll, votes: Votes, memberIds: string[]) {
+  const total = memberIds.length;
+  const voted = memberIds.filter((id) => votes[id]).length;
+  const options = poll.options.map((option) => {
+    const voters = memberIds.filter((id) => votes[id] === option.id);
     return {
       ...option,
       voters,
       percent: voted ? Math.round((voters.length / voted) * 100) : 0,
     };
   });
-  const max = Math.max(...options.map((option) => option.voters.length));
+  const max = Math.max(0, ...options.map((option) => option.voters.length));
   const leaderId = max > 0 ? options.find((option) => option.voters.length === max)?.id : undefined;
 
-  return { total, voted, percent: Math.round((voted / total) * 100), options, leaderId };
+  return {
+    total,
+    voted,
+    percent: total ? Math.round((voted / total) * 100) : 0,
+    options,
+    leaderId,
+  };
+}
+
+/** "4h", "2d", "35m" until the poll closes, or undefined once closed. */
+export function timeUntil(iso: string, now = Date.now()) {
+  const minutes = Math.floor((new Date(iso).getTime() - now) / 60_000);
+  if (minutes <= 0) return undefined;
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,9 +120,10 @@ export type ItineraryItem = {
   end: string;
   status: ItineraryStatus;
   title: string;
+  stopLabel: string;
   category: IdeaCategory;
   meta: string;
-  note: { by: MemberId; text: string };
+  note?: { by: string; text: string };
   /** How the group gets to the next stop. */
   transitAfter?: { mode: 'train' | 'walk'; duration: string; detail: string };
 };
@@ -325,86 +133,54 @@ export type ItineraryDay = {
   date: string;
   title?: string;
   routeKm?: number;
-  stops: string[];
   items: ItineraryItem[];
 };
-
-const DAY_TWO: Omit<ItineraryDay, 'day' | 'date'> = {
-  title: 'Tokyo Waterfront & Art',
-  routeKm: 6.4,
-  stops: ['Tsukiji', 'Toyosu Lunch', 'teamLab Planets', 'Odaiba Sunset'],
-  items: [
-    {
-      id: 'tsukiji',
-      start: '09:30 AM',
-      end: '11:30 AM',
-      status: 'confirmed',
-      title: 'Tsukiji Outer Market Food Tour',
-      category: 'Food & Drink',
-      meta: 'Food & Drink • Chuo City • Fresh Seafood',
-      note: { by: 'cardin', text: 'Arrive hungry, stalls close around noon!' },
-      transitAfter: {
-        mode: 'train',
-        duration: '18 min',
-        detail: 'Yurakucho Line to Toyosu (Exit 7)',
-      },
-    },
-    {
-      id: 'toyosu-lunch',
-      start: '01:00 PM',
-      end: '02:15 PM',
-      status: 'confirmed',
-      title: 'Seafood Lunch at Toyosu Senkyaku Banrai',
-      category: 'Food & Drink',
-      meta: 'Food & Drink • Edo-style Market Dining Hall • 4 Seats',
-      note: { by: 'grant', text: 'I reserved a table for us under my name!' },
-      transitAfter: {
-        mode: 'walk',
-        duration: '8 min walk',
-        detail: 'Waterside bridge directly to teamLab',
-      },
-    },
-    {
-      id: 'teamlab',
-      start: '02:30 PM',
-      end: '05:00 PM',
-      status: 'pending',
-      title: 'teamLab Planets Tokyo',
-      category: 'Entertainment',
-      meta: 'Entertainment • Toyosu • Immersive Water & Mirror Exhibition',
-      note: { by: 'grant', text: 'We walk barefoot through warm water. Lockers are free.' },
-      transitAfter: {
-        mode: 'train',
-        duration: '14 min',
-        detail: 'Yurikamome Monorail to Daiba Station',
-      },
-    },
-    {
-      id: 'odaiba',
-      start: '06:00 PM',
-      end: '09:30 PM',
-      status: 'optional',
-      title: 'Odaiba Sunset Walk & Deck Dinner',
-      category: 'Outdoors',
-      meta: 'Outdoors • Rainbow Bridge Skyline View • DECKS Tokyo Beach',
-      note: {
-        by: 'tedy',
-        text: 'Golden hour bayside walk with skyline views, then drinks on the deck!',
-      },
-    },
-  ],
-};
-
-/** One entry per trip day (May 14 – 22). Only Day 2 is planned in the prototype. */
-export const ITINERARY: ItineraryDay[] = Array.from({ length: TRIP.days }, (_, index) => {
-  const base = { day: index + 1, date: `May ${14 + index}` };
-  return index === 1 ? { ...base, ...DAY_TWO } : { ...base, stops: [], items: [] };
-});
 
 export function summarizeDay(day: ItineraryDay) {
   const count = (status: ItineraryStatus) =>
     day.items.filter((item) => item.status === status).length;
   return `${count('confirmed')} confirmed · ${count('pending')} pending · ${count('optional')} optional`;
+}
+
+// ---------------------------------------------------------------------------
+// Dates and times
+// ---------------------------------------------------------------------------
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const DAY_MS = 86_400_000;
+
+function parseDate(iso: string) {
+  const [year, month, day] = iso.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+/** "May 15" for day `offset` (0-based) after `startIso`. */
+export function formatDay(startIso: string, offset = 0) {
+  const date = new Date(parseDate(startIso) + offset * DAY_MS);
+  return `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}`;
+}
+
+export function tripLength(trip: Trip) {
+  const days = Math.round((parseDate(trip.endDate) - parseDate(trip.startDate)) / DAY_MS) + 1;
+  return { days, nights: Math.max(0, days - 1) };
+}
+
+/** "May 14 – 22, 2027" (or "May 30 – Jun 2, 2027" across months). */
+export function formatTripDates(trip: Trip) {
+  const start = new Date(parseDate(trip.startDate));
+  const end = new Date(parseDate(trip.endDate));
+  const endLabel =
+    start.getUTCMonth() === end.getUTCMonth()
+      ? `${end.getUTCDate()}`
+      : `${MONTHS[end.getUTCMonth()]} ${end.getUTCDate()}`;
+  return `${formatDay(trip.startDate)} – ${endLabel}, ${end.getUTCFullYear()}`;
+}
+
+/** "13:00:00" → "01:00 PM". */
+export function formatTime(value: string) {
+  const [h, m] = value.split(':').map(Number);
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +220,7 @@ export type Place = {
   tag: SuggestTag;
 };
 
-/** Stand-in for a places search API. */
+/** Stand-in for a places search API (for example Google Places), which needs a server-side key. */
 export const PLACES: Place[] = [
   {
     id: 'shibuya-sky',
