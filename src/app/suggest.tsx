@@ -1,29 +1,32 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '@/components/icon';
+import { PageTransition } from '@/components/page-transition';
 import { ThemedText } from '@/components/themed-text';
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { MapPreview } from '@/components/ui/map-preview';
-import { Segmented } from '@/components/ui/segmented';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { errorMessage, useTrip } from '@/context/trip-context';
 import {
-  BUDGET_LABEL,
   findPlace,
   POPULAR_PLACES,
   SUGGEST_TAG_CATEGORY,
-  type Budget,
   type SuggestTag,
 } from '@/data/trip';
 import { useTheme } from '@/hooks/use-theme';
 
 const NOTE_LIMIT = 280;
+
+function exactSavedPlace(name: string) {
+  const match = findPlace(name);
+  return match?.name.toLowerCase() === name.trim().toLowerCase() ? match : undefined;
+}
 
 const TAGS: { value: SuggestTag; icon: IconName }[] = [
   { value: 'Food', icon: 'food' },
@@ -32,43 +35,56 @@ const TAGS: { value: SuggestTag; icon: IconName }[] = [
   { value: 'Shopping', icon: 'shopping' },
 ];
 
-const BUDGETS: Budget[] = ['Free', '¥', '¥¥', '¥¥¥'];
-
 export default function SuggestScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { addIdea, trip, me, isOrganizer } = useTrip();
   const [query, setQuery] = useState('');
   const [tag, setTag] = useState<SuggestTag>('Sightseeing');
-  const [budget, setBudget] = useState<Budget>('¥¥');
+  const [address, setAddress] = useState('');
+  const [cost, setCost] = useState('');
+  const matchedPlaceId = useRef<string | undefined>(undefined);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
 
-  const place = findPlace(query);
-  const title = place?.name ?? query.trim();
+  const hasSavedPlaces = /\btokyo\b/i.test(trip.destination);
+  const place = hasSavedPlaces ? exactSavedPlace(query) : undefined;
+  const title = query.trim();
   // e.g. "TOKYO '27" from "Tokyo & Kyoto, Japan" ending in 2027.
   const tripTag = `${trip.destination.split(/[\s,&]/)[0].toUpperCase()} '${trip.endDate.slice(2, 4)}`;
   // The iOS sheet starts below the status bar already; full-screen modals do not.
   const topInset = Platform.OS === 'ios' ? Spacing.four : insets.top + Spacing.three;
 
+  const changeQuery = (value: string) => {
+    setQuery(value);
+    const match = hasSavedPlaces ? exactSavedPlace(value) : undefined;
+    if (match?.id !== matchedPlaceId.current) {
+      matchedPlaceId.current = match?.id;
+      if (match) setTag(match.tag);
+      setAddress((current) => match?.address ?? (current === place?.address ? '' : current));
+      setCost((current) => match?.price ?? (current === place?.price ? '' : current));
+    }
+  };
+
   const pickPopular = (name: string) => {
-    setQuery(name);
-    const match = findPlace(name);
-    if (match) setTag(match.tag);
+    matchedPlaceId.current = undefined;
+    changeQuery(findPlace(name)?.name ?? name);
   };
 
   const submit = async () => {
+    if (!title || saving) return;
     setSaving(true);
     setError(undefined);
     try {
       await addIdea({
         title,
         category: SUGGEST_TAG_CATEGORY[tag],
-        price: place?.price ?? BUDGET_LABEL[budget],
+        address: address.trim(),
+        price: cost.trim(),
         description: note.trim(),
       });
-      router.back();
+      router.dismissTo('/ideas');
     } catch (caught) {
       setError(errorMessage(caught));
       setSaving(false);
@@ -76,7 +92,9 @@ export default function SuggestScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: theme.background }]}>
+    <PageTransition
+      enabled={Platform.OS === 'web'}
+      style={[styles.root, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { paddingTop: topInset }]}>
         <ThemedText type="heading" accessibilityRole="header">
           Suggest a Place
@@ -116,8 +134,9 @@ export default function SuggestScreen() {
               ]}>
               <Icon name="pin" size={14} color={theme.primary} />
               <TextInput
+                accessibilityLabel="Place name or location"
                 value={query}
-                onChangeText={setQuery}
+                onChangeText={changeQuery}
                 placeholder="Search for a place"
                 placeholderTextColor={theme.textSecondary}
                 autoCorrect={false}
@@ -125,7 +144,7 @@ export default function SuggestScreen() {
                 style={[styles.inputText, { color: theme.text }]}
               />
             </View>
-            <ScrollView
+            {hasSavedPlaces && <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
@@ -149,7 +168,27 @@ export default function SuggestScreen() {
                   </ThemedText>
                 </Pressable>
               ))}
-            </ScrollView>
+            </ScrollView>}
+          </View>
+
+          <View style={styles.field}>
+            <ThemedText type="caption" style={styles.bold}>Street address (optional)</ThemedText>
+            <View
+              style={[
+                styles.input,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}>
+              <Icon name="pin" size={14} color={theme.primary} />
+              <TextInput
+                accessibilityLabel="Street address"
+                value={address}
+                onChangeText={setAddress}
+                placeholder="Add the place address"
+                placeholderTextColor={theme.textSecondary}
+                autoCorrect={false}
+                style={[styles.inputText, { color: theme.text }]}
+              />
+            </View>
           </View>
 
           {place ? (
@@ -184,13 +223,7 @@ export default function SuggestScreen() {
                 </View>
               </View>
             </Card>
-          ) : (
-            title.length > 0 && (
-              <ThemedText type="caption" themeColor="textSecondary">
-                No saved match for “{title}”. You can still add it by name.
-              </ThemedText>
-            )
-          )}
+          ) : null}
 
           <View style={styles.field}>
             <ThemedText type="caption" style={styles.bold}>
@@ -224,19 +257,21 @@ export default function SuggestScreen() {
           </View>
 
           <View style={styles.field}>
-            <View style={styles.rowBetween}>
-              <ThemedText type="caption" style={styles.bold}>
-                Estimated Budget
-              </ThemedText>
-              <ThemedText type="caption" themeColor="textSecondary">
-                {BUDGET_LABEL[budget]}
-              </ThemedText>
+            <ThemedText type="caption" style={styles.bold}>Estimated cost (optional)</ThemedText>
+            <View
+              style={[
+                styles.input,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}>
+              <TextInput
+                accessibilityLabel="Estimated cost"
+                value={cost}
+                onChangeText={setCost}
+                placeholder="e.g. ¥2,000 or Free"
+                placeholderTextColor={theme.textSecondary}
+                style={[styles.inputText, { color: theme.text }]}
+              />
             </View>
-            <Segmented<Budget>
-              value={budget}
-              onChange={setBudget}
-              options={BUDGETS.map((value) => ({ value, label: value }))}
-            />
           </View>
 
           <View style={styles.field}>
@@ -254,11 +289,9 @@ export default function SuggestScreen() {
                   {me.name}
                   {isOrganizer ? ' (Organizer)' : ''}
                 </ThemedText>
-                <ThemedText type="caption" themeColor="textSecondary">
-                  • Auto-endorsed
-                </ThemedText>
               </View>
               <TextInput
+                accessibilityLabel="Recommendation note"
                 value={note}
                 onChangeText={setNote}
                 maxLength={NOTE_LIMIT}
@@ -267,18 +300,9 @@ export default function SuggestScreen() {
                 placeholderTextColor={theme.textSecondary}
                 style={[styles.noteInput, { color: theme.text }]}
               />
-              <View style={styles.rowBetween}>
-                {/* Photo picking is not part of this prototype yet. */}
-                <View style={styles.inline}>
-                  <Icon name="photo" size={12} color={theme.textSecondary} />
-                  <ThemedText type="caption" themeColor="textSecondary">
-                    Attach Photo (coming soon)
-                  </ThemedText>
-                </View>
-                <ThemedText type="mono" themeColor="textSecondary">
-                  {note.length}/{NOTE_LIMIT}
-                </ThemedText>
-              </View>
+              <ThemedText type="mono" themeColor="textSecondary" style={styles.counter}>
+                {note.length}/{NOTE_LIMIT}
+              </ThemedText>
             </View>
           </View>
         </View>
@@ -306,15 +330,15 @@ export default function SuggestScreen() {
             style={styles.cancel}
           />
           <Button
-            label={saving ? 'Adding…' : 'Add to Squad Ideas'}
+            label={saving ? 'Saving…' : 'Add to Ideas'}
             icon="plusCircle"
-            disabled={title.length === 0 || saving}
+            disabled={!title || saving}
             onPress={submit}
             style={styles.submit}
           />
         </View>
       </View>
-    </View>
+    </PageTransition>
   );
 }
 
@@ -336,12 +360,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.one + 2,
   },
-  rowBetween: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-  },
+  counter: { alignSelf: 'flex-end' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

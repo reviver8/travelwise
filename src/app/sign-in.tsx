@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 're
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/icon';
+import { PageTransition } from '@/components/page-transition';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -63,7 +64,7 @@ export default function SignInScreen() {
           styles.content,
           { paddingTop: insets.top + Spacing.five, paddingBottom: insets.bottom + Spacing.four },
         ]}>
-        <View style={styles.inner}>
+        <PageTransition enabled={Platform.OS === 'web'} style={styles.inner}>
           <View style={[styles.logo, { backgroundColor: theme.primary }]}>
             <Icon name="logo" size={28} color={theme.onPrimary} />
           </View>
@@ -144,7 +145,7 @@ export default function SignInScreen() {
               </View>
             )}
           </Card>
-        </View>
+        </PageTransition>
       </ScrollView>
     </KeyboardAvoidingView>
   );

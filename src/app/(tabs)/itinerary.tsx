@@ -1,6 +1,5 @@
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { router, useLocalSearchParams } from 'expo-router';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { CATEGORY_ICON, Icon } from '@/components/icon';
 import { Screen } from '@/components/screen';
@@ -10,14 +9,16 @@ import { Badge, type BadgeTone } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Radius, Spacing } from '@/constants/theme';
-import { useTrip } from '@/context/trip-context';
+import { errorMessage, useTrip } from '@/context/trip-context';
 import {
   getPollStats,
+  isPollOpen,
   summarizeDay,
   type ItineraryDay,
   type ItineraryItem,
   type ItineraryStatus,
 } from '@/data/trip';
+import { showError } from '@/lib/alert';
 import { useTheme } from '@/hooks/use-theme';
 
 const STATUS: Record<ItineraryStatus, { label: string; tone: BadgeTone; icon: 'check' | 'vote' | 'clock' }> = {
@@ -29,10 +30,12 @@ const STATUS: Record<ItineraryStatus, { label: string; tone: BadgeTone; icon: 'c
 export default function ItineraryScreen() {
   const theme = useTheme();
   const { itinerary } = useTrip();
+  const params = useLocalSearchParams<{ day?: string }>();
+  const requestedDay = Number(params.day);
   // Start on the first day that has plans.
-  const [dayNumber, setDayNumber] = useState(
-    () => itinerary.find((entry) => entry.items.length > 0)?.day ?? 1
-  );
+  const dayNumber = itinerary.some((entry) => entry.day === requestedDay)
+    ? requestedDay
+    : itinerary.find((entry) => entry.items.length > 0)?.day ?? 1;
   const day = itinerary.find((entry) => entry.day === dayNumber) ?? itinerary[0];
 
   return (
@@ -49,7 +52,7 @@ export default function ItineraryScreen() {
               key={entry.day}
               accessibilityRole="button"
               accessibilityState={{ selected }}
-              onPress={() => setDayNumber(entry.day)}
+              onPress={() => router.setParams({ day: String(entry.day) })}
               style={[
                 styles.dayChip,
                 { backgroundColor: selected ? theme.primary : theme.backgroundElement },
@@ -81,14 +84,14 @@ function EmptyDay({ day }: { day: ItineraryDay }) {
         Day {day.day} · {day.date}
       </ThemedText>
       <ThemedText type="caption" themeColor="textSecondary" style={styles.centered}>
-        Nothing is planned for this day yet. Confirmed ideas will show up here.
+        No stops scheduled for this day. Once the organizer schedules a poll winner, it appears here.
       </ThemedText>
       <Button
-        label="Browse Ideas"
-        icon="idea"
+        label="Go to Decisions"
+        icon="vote"
         variant="outline"
         size="small"
-        onPress={() => router.navigate('/ideas')}
+        onPress={() => router.navigate('/decisions')}
       />
     </Card>
   );
@@ -96,14 +99,14 @@ function EmptyDay({ day }: { day: ItineraryDay }) {
 
 function DayPlan({ day }: { day: ItineraryDay }) {
   const theme = useTheme();
-  const { members } = useTrip();
+  const { members, polls, votesByPoll, memberById, ideas } = useTrip();
 
   return (
     <>
       <View style={styles.dayHeader}>
         <ThemedText type="display" style={styles.dayTitle}>
           Day {day.day}
-          {day.title ? `: ${day.title}` : ` · ${day.date}`}
+          {day.title && day.title !== `Day ${day.day}` ? `: ${day.title}` : ` · ${day.date}`}
         </ThemedText>
         <AvatarStack members={members} size={26} max={3} />
       </View>
@@ -152,20 +155,70 @@ function DayPlan({ day }: { day: ItineraryDay }) {
 
       <View>
         {day.items.map((item, index) => (
-          <TimelineItem key={item.id} item={item} isLast={index === day.items.length - 1} />
+          <TimelineItem
+            key={item.id}
+            item={item}
+            isLast={index === day.items.length - 1}
+            polls={polls}
+            votesByPoll={votesByPoll}
+            memberById={memberById}
+            ideas={ideas}
+          />
         ))}
       </View>
     </>
   );
 }
 
-function TimelineItem({ item, isLast }: { item: ItineraryItem; isLast: boolean }) {
+function TimelineItem({
+  item,
+  isLast,
+  polls,
+  votesByPoll,
+  memberById,
+  ideas,
+}: {
+  item: ItineraryItem;
+  isLast: boolean;
+  polls: ReturnType<typeof useTrip>['polls'];
+  votesByPoll: ReturnType<typeof useTrip>['votesByPoll'];
+  memberById: ReturnType<typeof useTrip>['memberById'];
+  ideas: ReturnType<typeof useTrip>['ideas'];
+}) {
   const theme = useTheme();
-  const status = STATUS[item.status];
+  const author = item.addedBy ? memberById(item.addedBy) : undefined;
+  const noteAuthor = item.note ? memberById(item.note.by) : undefined;
+  const relatedPoll = polls.find((poll) => poll.id === item.sourcePollId)
+    ?? polls.find((poll) =>
+      poll.options.some((option) => {
+        const linkedIdeaTitle = option.ideaId
+          ? ideas.find((idea) => idea.id === option.ideaId)?.title
+          : undefined;
+        return linkedIdeaTitle === item.title || option.title === item.title;
+      })
+    );
   const pending = item.status === 'pending';
-  const dotColor = pending ? theme.warning : theme.primary;
-  const { memberById } = useTrip();
-  const author = item.note ? memberById(item.note.by) : undefined;
+  const pollIsLive = !!relatedPoll && !relatedPoll.resolvedAt;
+  const showPendingStatus = pending && !!relatedPoll && isPollOpen(relatedPoll);
+  const status = pending
+    ? relatedPoll?.resolvedAt
+      ? undefined
+      : relatedPoll && !isPollOpen(relatedPoll)
+        ? { label: 'Voting Closed', tone: 'neutral' as const, icon: 'clock' as const }
+        : relatedPoll
+          ? STATUS.pending
+          : undefined
+    : STATUS[item.status];
+  const dotColor = showPendingStatus ? theme.warning : theme.primary;
+  const directionsUrl = item.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(item.address)}` : undefined;
+  const openDirections = async () => {
+    if (!directionsUrl) return;
+    try {
+      await Linking.openURL(directionsUrl);
+    } catch (error) {
+      showError('Unable to open directions', errorMessage(error));
+    }
+  };
 
   return (
     <View style={styles.timelineRow}>
@@ -184,32 +237,53 @@ function TimelineItem({ item, isLast }: { item: ItineraryItem; isLast: boolean }
         <Card
           style={[
             styles.itemCard,
-            pending && { borderLeftWidth: 3, borderLeftColor: theme.warning },
+            showPendingStatus && { borderLeftWidth: 3, borderLeftColor: theme.warning },
           ]}>
           <View style={styles.rowBetween}>
-            <ThemedText type="mono" themeColor={pending ? 'warning' : 'textSecondary'}>
+            <ThemedText type="mono" themeColor={showPendingStatus ? 'warning' : 'textSecondary'}>
               {item.start} – {item.end}
             </ThemedText>
-            <Badge label={status.label} icon={status.icon} tone={status.tone} />
+            {status && <Badge label={status.label} icon={status.icon} tone={status.tone} />}
           </View>
           <ThemedText type="heading">{item.title}</ThemedText>
           <View style={styles.metaRow}>
             <Icon name={CATEGORY_ICON[item.category]} size={12} color={theme.textSecondary} />
             <ThemedText type="caption" themeColor="textSecondary" style={styles.flex}>
-              {item.meta}
+              {item.sourcePollId ? item.category : item.meta}
             </ThemedText>
           </View>
 
-          {pending && <VotingStatus />}
+          <Pressable
+            accessibilityRole={directionsUrl ? 'link' : 'text'}
+            accessibilityLabel={directionsUrl ? `Open directions to ${item.address}` : item.address || 'Address unavailable'}
+            disabled={!directionsUrl}
+            onPress={openDirections}
+            style={styles.detailRow}>
+              <Icon name="pin" size={13} color={theme.textSecondary} />
+              <ThemedText type="caption" themeColor="textSecondary" style={styles.flex}>
+                {item.address || 'Address unavailable'}
+              </ThemedText>
+              {!!directionsUrl && <Icon name="openExternal" size={12} color={theme.primary} />}
+          </Pressable>
+          <ThemedText type="caption" themeColor={item.price ? 'primary' : 'textSecondary'}>
+            {item.price || 'Cost unavailable'}
+          </ThemedText>
+          {author && (
+            <ThemedText type="caption" themeColor="textSecondary">Added by {author.name}</ThemedText>
+          )}
 
-          {item.note && author && (
+          {pending && pollIsLive && relatedPoll && (
+            <VotingStatus poll={relatedPoll} votes={votesByPoll[relatedPoll.id] ?? {}} />
+          )}
+
+          {item.note && noteAuthor && (
             <View style={[styles.note, { backgroundColor: theme.backgroundElement }]}>
-              <Avatar member={author} size={18} />
+              <Avatar member={noteAuthor} size={18} />
               <ThemedText type="caption" style={styles.noteText}>
                 “{item.note.text}”
               </ThemedText>
-              <ThemedText type="caption" style={[styles.bold, { color: author.color }]}>
-                {author.name}
+              <ThemedText type="caption" style={[styles.bold, { color: noteAuthor.color }]}>
+                {noteAuthor.name}
               </ThemedText>
             </View>
           )}
@@ -230,17 +304,22 @@ function TimelineItem({ item, isLast }: { item: ItineraryItem; isLast: boolean }
 }
 
 /** Live poll summary shown on itinerary items that are still being voted on. */
-function VotingStatus() {
+function VotingStatus({
+  poll: currentPoll,
+  votes,
+}: {
+  poll: ReturnType<typeof useTrip>['polls'][number];
+  votes: ReturnType<typeof useTrip>['votesByPoll'][string];
+}) {
   const theme = useTheme();
-  const { poll: currentPoll, votes, memberIds } = useTrip();
-  if (!currentPoll) return null;
+  const { memberIds } = useTrip();
   const poll = getPollStats(currentPoll, votes, memberIds);
 
   return (
     <Pressable
       accessibilityRole="link"
       accessibilityLabel="Open the vote"
-      onPress={() => router.navigate('/decisions')}
+      onPress={() => router.navigate({ pathname: '/decisions', params: { pollId: currentPoll.id } })}
       style={({ pressed }) => [
         styles.voting,
         { backgroundColor: theme.warningSoft },
@@ -249,7 +328,7 @@ function VotingStatus() {
       <Icon name="vote" size={16} color={theme.warning} />
       <View style={styles.flex}>
         <ThemedText type="caption" style={styles.bold}>
-          Voting in Progress
+          {isPollOpen(currentPoll) ? 'Voting in Progress' : 'Voting Closed'}
         </ThemedText>
         <ThemedText type="mono" themeColor="textSecondary">
           {poll.voted} of {poll.total} group members voted · Leading option
@@ -388,6 +467,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.one + 2,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
   },
   note: {
     flexDirection: 'row',

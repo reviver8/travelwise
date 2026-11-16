@@ -1,8 +1,9 @@
-import { createContext, use, useEffect, useState, type ReactNode } from 'react';
+import { createContext, use, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-import type { Member } from '@/data/trip';
+import type { Member, Trip } from '@/data/trip';
 import * as api from '@/lib/trip-api';
-import type { NewIdea, TripData } from '@/lib/trip-api';
+import { authStorage, canPersistSession } from '@/lib/session-storage';
+import type { NewIdea, NewTrip, Schedule, TripData } from '@/lib/trip-api';
 
 export type { NewIdea };
 
@@ -12,19 +13,47 @@ type TripState = { status: TripStatus; data?: TripData; error?: string };
 
 type TripContextValue = TripState & {
   userId: string | null;
-  refresh: () => void;
+  trips: Trip[];
+  refresh: () => Promise<void>;
+  createTrip: (input: NewTrip) => Promise<void>;
   createDemoTrip: () => Promise<void>;
   joinTrip: (inviteCode: string) => Promise<void>;
+  switchTrip: (id: string) => Promise<void>;
   addIdea: (idea: NewIdea) => Promise<void>;
   toggleLike: (ideaId: string) => Promise<void>;
-  proposeIdea: (ideaId: string) => Promise<void>;
-  castVote: (optionId: string) => Promise<void>;
+  proposeIdea: (ideaId: string) => Promise<string>;
+  createPoll: (question: string, ideaIds: string[]) => Promise<string>;
+  castVote: (pollId: string, optionId: string) => Promise<void>;
+  resolvePoll: (pollId: string, optionId: string, schedule?: Schedule) => Promise<void>;
+  cancelPoll: (pollId: string) => Promise<void>;
+  closePollVoting: (pollId: string) => Promise<void>;
+  deletePoll: (pollId: string) => Promise<void>;
 };
 
 const TripContext = createContext<TripContextValue | null>(null);
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+}
+
+const activeTripStorageKey = (userId: string) => `travelwise.active-trip.${userId}`;
+
+function readActiveTripId(userId: string) {
+  if (!canPersistSession || !authStorage) return null;
+  try {
+    return authStorage.getItem(activeTripStorageKey(userId));
+  } catch {
+    return null;
+  }
+}
+
+function writeActiveTripId(userId: string, tripId: string) {
+  if (!canPersistSession || !authStorage) return;
+  try {
+    authStorage.setItem(activeTripStorageKey(userId), tripId);
+  } catch {
+    // Storage is a convenience; the selected trip remains usable for this session.
+  }
 }
 
 /**
@@ -39,65 +68,116 @@ export function TripProvider({
   children: ReactNode;
 }) {
   const [state, setState] = useState<TripState>({ status: userId ? 'loading' : 'signed-out' });
-  const [reloadKey, setReloadKey] = useState(0);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const request = useRef({ sequence: 0 });
+  const activeTripId = useRef<string | undefined>(undefined);
+  const selectionPending = useRef(false);
   const tripId = state.data?.trip.id;
 
-  const refresh = () => setReloadKey((key) => key + 1);
+  const refresh = useCallback(async () => {
+    if (!userId) return;
+    // Do not let a background refresh race and replace an explicit trip selection.
+    if (selectionPending.current) return;
+    const id = ++request.current.sequence;
+    try {
+      const availableTrips = await api.fetchTrips(userId);
+      if (id !== request.current.sequence) return;
+      setTrips(availableTrips);
+      if (availableTrips.length === 0) {
+        activeTripId.current = undefined;
+        setState({ status: 'no-trip' });
+        return;
+      }
+      const preferredId = activeTripId.current ?? readActiveTripId(userId);
+      const selectedTrip = availableTrips.find((trip) => trip.id === preferredId) ?? availableTrips[0];
+      const data = await api.fetchTripData(selectedTrip.id, userId);
+      if (id === request.current.sequence) {
+        activeTripId.current = selectedTrip.id;
+        writeActiveTripId(userId, selectedTrip.id);
+        setState({ status: 'ready', data });
+      }
+    } catch (error) {
+      if (id !== request.current.sequence) return;
+      setState((current) =>
+        current.data
+          ? { ...current, error: errorMessage(error) }
+          : { status: 'error', error: errorMessage(error) }
+      );
+    }
+  }, [userId]);
+
+  const openTrip = async (tripIdToOpen: string) => {
+    if (!userId) throw new Error('Sign in before opening a trip.');
+    if (selectionPending.current) throw new Error('Wait for the trip to finish opening.');
+    const requestId = ++request.current.sequence;
+    selectionPending.current = true;
+    try {
+      const availableTrips = await api.fetchTrips(userId);
+      const selectedTrip = availableTrips.find((trip) => trip.id === tripIdToOpen);
+      if (!selectedTrip) throw new Error('You are no longer a member of that trip.');
+      const data = await api.fetchTripData(selectedTrip.id, userId);
+      if (requestId !== request.current.sequence) return;
+      activeTripId.current = selectedTrip.id;
+      writeActiveTripId(userId, selectedTrip.id);
+      setTrips(availableTrips);
+      setState({ status: 'ready', data });
+    } finally {
+      if (requestId === request.current.sequence) selectionPending.current = false;
+    }
+  };
+
+  const runAndOpen = async (create: () => Promise<string>) => {
+    if (!userId) throw new Error('Sign in before opening a trip.');
+    if (selectionPending.current) throw new Error('Wait for the trip to finish opening.');
+    const requestId = ++request.current.sequence;
+    selectionPending.current = true;
+    try {
+      const newTripId = await create();
+      if (requestId !== request.current.sequence) return;
+      const availableTrips = await api.fetchTrips(userId);
+      const selectedTrip = availableTrips.find((trip) => trip.id === newTripId);
+      if (!selectedTrip) throw new Error('Trip created, but your membership could not be loaded.');
+      const data = await api.fetchTripData(selectedTrip.id, userId);
+      if (requestId !== request.current.sequence) return;
+      activeTripId.current = selectedTrip.id;
+      writeActiveTripId(userId, selectedTrip.id);
+      setTrips(availableTrips);
+      setState({ status: 'ready', data });
+    } finally {
+      if (requestId === request.current.sequence) selectionPending.current = false;
+    }
+  };
 
   useEffect(() => {
-    if (!userId) return;
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const currentTripId = await api.fetchCurrentTripId(userId);
-        if (cancelled) return;
-        if (!currentTripId) {
-          setState({ status: 'no-trip' });
-          return;
-        }
-        const data = await api.fetchTripData(currentTripId, userId);
-        if (!cancelled) setState({ status: 'ready', data });
-      } catch (error) {
-        if (cancelled) return;
-        // Keep showing the last good data if a background refresh fails.
-        setState((current) =>
-          current.data
-            ? { ...current, error: errorMessage(error) }
-            : { status: 'error', error: errorMessage(error) }
-        );
-      }
-    })();
-
+    const activeRequest = request.current;
+    void refresh();
     return () => {
-      cancelled = true;
+      activeRequest.sequence++;
     };
-  }, [userId, reloadKey]);
+  }, [refresh]);
 
   // Reload when someone else in the group changes something.
   useEffect(() => {
     if (!tripId) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const unsubscribe = api.subscribeToTrip(tripId, () => {
-      // Several rows often change at once (e.g. a vote replaces another); reload once.
+    let timer: ReturnType<typeof setTimeout>;
+    let connected = false;
+    const queueRefresh = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => setReloadKey((key) => key + 1), 250);
+      timer = setTimeout(refresh, 250);
+    };
+    const unsubscribe = api.subscribeToTrip(tripId, queueRefresh, (subscribed) => {
+      connected = subscribed;
+      if (subscribed) queueRefresh();
     });
+    const retry = setInterval(() => {
+      if (!connected) void refresh();
+    }, 10_000);
     return () => {
       clearTimeout(timer);
+      clearInterval(retry);
       unsubscribe();
     };
-  }, [tripId]);
-
-  /** Applies a change locally, then reloads from the server (rolling back on failure). */
-  const optimistic = async (update: (data: TripData) => TripData, run: () => Promise<void>) => {
-    setState((current) => (current.data ? { ...current, data: update(current.data) } : current));
-    try {
-      await run();
-    } finally {
-      refresh();
-    }
-  };
+  }, [tripId, refresh]);
 
   const requireData = () => {
     if (!state.data || !userId) throw new Error('No trip loaded yet.');
@@ -107,60 +187,65 @@ export function TripProvider({
   const value: TripContextValue = {
     ...state,
     userId,
+    trips,
     refresh,
 
-    createDemoTrip: async () => {
-      await api.createDemoTrip();
-      refresh();
-    },
+    createTrip: (input) => runAndOpen(() => api.createTrip(input)),
+    switchTrip: openTrip,
 
-    joinTrip: async (inviteCode) => {
-      await api.joinTrip(inviteCode);
-      refresh();
-    },
+    createDemoTrip: () => runAndOpen(api.createDemoTrip),
+
+    joinTrip: (inviteCode) => runAndOpen(() => api.joinTrip(inviteCode)),
 
     addIdea: async (idea) => {
       await api.insertIdea(requireData().trip.id, idea);
-      refresh();
+      await refresh();
     },
 
     toggleLike: async (ideaId) => {
       const { ideas, userId: me } = requireData();
       const idea = ideas.find((item) => item.id === ideaId);
       if (!idea) return;
-      const liked = !idea.likedByMe;
-      await optimistic(
-        (data) => ({
-          ...data,
-          ideas: data.ideas.map((item) =>
-            item.id === ideaId
-              ? { ...item, likedByMe: liked, likes: item.likes + (liked ? 1 : -1) }
-              : item
-          ),
-        }),
-        () => api.setLike(ideaId, me, liked)
-      );
+      await api.setLike(ideaId, me, !idea.likedByMe);
+      await refresh();
     },
 
     proposeIdea: async (ideaId) => {
-      await optimistic(
-        (data) => ({
-          ...data,
-          ideas: data.ideas.map((item) =>
-            item.id === ideaId ? { ...item, status: 'proposed' } : item
-          ),
-        }),
-        () => api.proposeIdea(ideaId)
-      );
+      const pollId = await api.proposeIdea(ideaId);
+      if (!pollId) throw new Error('Voting setup is incomplete. Apply the demo database migration.');
+      await refresh();
+      return pollId;
     },
 
-    castVote: async (optionId) => {
-      const { poll, userId: me } = requireData();
-      if (!poll) return;
-      await optimistic(
-        (data) => ({ ...data, votes: { ...data.votes, [me]: optionId } }),
-        () => api.upsertVote(poll.id, me, optionId)
-      );
+    createPoll: async (question, ideaIds) => {
+      const pollId = await api.createPoll(requireData().trip.id, question, ideaIds);
+      await refresh();
+      return pollId;
+    },
+
+    castVote: async (pollId, optionId) => {
+      await api.upsertVote(pollId, requireData().userId, optionId);
+      await refresh();
+    },
+
+    resolvePoll: async (pollId, optionId, schedule) => {
+      await api.resolvePoll(pollId, optionId, schedule);
+      await refresh();
+    },
+
+    cancelPoll: async (pollId) => {
+      await api.cancelPoll(pollId);
+      await refresh();
+    },
+
+    closePollVoting: async (pollId) => {
+      await api.closePollVoting(pollId);
+      await refresh();
+    },
+
+    deletePoll: async (pollId) => {
+      await api.deletePoll(pollId);
+      await refresh();
     },
   };
 

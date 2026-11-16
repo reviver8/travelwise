@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/icon';
+import { PageTransition } from '@/components/page-transition';
 import { ThemedText } from '@/components/themed-text';
 import { Avatar } from '@/components/ui/avatar';
 import { BottomTabInset, MaxContentWidth, Radius, Spacing } from '@/constants/theme';
@@ -62,7 +63,7 @@ export function Screen({ title, children, floating }: ScreenProps) {
           styles.content,
           { paddingBottom: tabBarSpace + Spacing.four + (floating ? 56 : 0) },
         ]}>
-        <View style={styles.inner}>{children}</View>
+        <PageTransition style={styles.inner}>{children}</PageTransition>
       </ScrollView>
 
       {floating && (

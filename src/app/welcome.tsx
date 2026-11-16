@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CreateTripForm } from '@/components/create-trip-form';
+import { PageTransition } from '@/components/page-transition';
 import { ThemedText } from '@/components/themed-text';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -23,6 +25,7 @@ export default function WelcomeScreen() {
 
   // On success the trip loads and the router switches to the tabs.
   const run = async (kind: 'demo' | 'join', action: () => Promise<void>) => {
+    if (busy) return;
     setBusy(kind);
     setError(undefined);
     try {
@@ -43,13 +46,15 @@ export default function WelcomeScreen() {
           styles.content,
           { paddingTop: insets.top + Spacing.five, paddingBottom: insets.bottom + Spacing.four },
         ]}>
-        <View style={styles.inner}>
+        <PageTransition enabled={Platform.OS === 'web'} style={styles.inner}>
           <ThemedText type="display" accessibilityRole="header">
-            Start planning
+            Your next trip starts here
           </ThemedText>
           <ThemedText type="small" themeColor="textSecondary">
-            Signed in as {session?.user.email}.
+            Signed in as {session?.user.email}. Create a trip or join your group.
           </ThemedText>
+
+          <CreateTripForm />
 
           <Card style={styles.card}>
             <ThemedText type="heading">Join your group</ThemedText>
@@ -63,17 +68,17 @@ export default function WelcomeScreen() {
               autoCorrect={false}
               maxLength={8}
               returnKeyType="join"
-              onSubmitEditing={() => inviteCode.trim() && run('join', () => joinTrip(inviteCode))}
+              onSubmitEditing={() => inviteCode.trim().length === 8 && run('join', () => joinTrip(inviteCode.trim()))}
             />
             <Button
               label={busy === 'join' ? 'Joining…' : 'Join Trip'}
-              disabled={!!busy || inviteCode.trim().length === 0}
-              onPress={() => run('join', () => joinTrip(inviteCode))}
+              disabled={!!busy || inviteCode.trim().length !== 8}
+              onPress={() => run('join', () => joinTrip(inviteCode.trim()))}
             />
           </Card>
 
           <Card style={styles.card}>
-            <ThemedText type="heading">Or try the sample trip</ThemedText>
+            <ThemedText type="heading">Explore with a sample trip</ThemedText>
             <ThemedText type="caption" themeColor="textSecondary">
               Creates “Tokyo & Kyoto 2027” with ideas, a vote, and a Day 2 plan. You’ll be the
               organizer and can invite friends with its code.
@@ -101,7 +106,7 @@ export default function WelcomeScreen() {
             onPress={() => signOut().catch((caught) => setError(errorMessage(caught)))}
             style={styles.signOut}
           />
-        </View>
+        </PageTransition>
       </ScrollView>
     </KeyboardAvoidingView>
   );

@@ -38,6 +38,7 @@ export type Idea = {
   title: string;
   category: IdeaCategory;
   price: string;
+  address: string;
   description: string;
   addedBy: string;
   likes: number;
@@ -53,6 +54,8 @@ export type Idea = {
 
 export type PollOption = {
   id: string;
+  ideaId?: string;
+  isSkip: boolean;
   title: string;
   category: IdeaCategory;
   area: string;
@@ -65,6 +68,9 @@ export type Poll = {
   createdBy: string;
   /** ISO timestamp. */
   closesAt: string;
+  resolvedAt?: string;
+  cancelledAt?: string;
+  winningOptionId?: string;
   options: PollOption[];
 };
 
@@ -72,7 +78,7 @@ export type Poll = {
 export type Votes = Record<string, string>;
 
 export function isPollOpen(poll: Poll, now = Date.now()) {
-  return new Date(poll.closesAt).getTime() > now;
+  return !poll.resolvedAt && new Date(poll.closesAt).getTime() > now;
 }
 
 export function getPollStats(poll: Poll, votes: Votes, memberIds: string[]) {
@@ -100,8 +106,9 @@ export function getPollStats(poll: Poll, votes: Votes, memberIds: string[]) {
 
 /** "4h", "2d", "35m" until the poll closes, or undefined once closed. */
 export function timeUntil(iso: string, now = Date.now()) {
-  const minutes = Math.floor((new Date(iso).getTime() - now) / 60_000);
-  if (minutes <= 0) return undefined;
+  const remaining = new Date(iso).getTime() - now;
+  if (remaining <= 0) return undefined;
+  const minutes = Math.ceil(remaining / 60_000);
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.floor(minutes / 60);
   if (hours < 48) return `${hours}h`;
@@ -118,11 +125,17 @@ export type ItineraryItem = {
   id: string;
   start: string;
   end: string;
+  startTime: string;
+  endTime: string;
   status: ItineraryStatus;
   title: string;
   stopLabel: string;
   category: IdeaCategory;
   meta: string;
+  address: string;
+  price: string;
+  addedBy?: string;
+  sourcePollId?: string;
   note?: { by: string; text: string };
   /** How the group gets to the next stop. */
   transitAfter?: { mode: 'train' | 'walk'; duration: string; detail: string };
@@ -134,6 +147,17 @@ export type ItineraryDay = {
   title?: string;
   routeKm?: number;
   items: ItineraryItem[];
+};
+
+/** Details missing from the original Tokyo & Kyoto sample rows. */
+export const SAMPLE_ITINERARY_DETAILS: Record<string, { address: string; price?: string }> = {
+  'Seafood Lunch at Toyosu Senkyaku Banrai': {
+    address: '6-5-1 Toyosu, Koto City, Tokyo',
+    price: '¥2,000 per person',
+  },
+  'Odaiba Sunset Walk & Deck Dinner': {
+    address: '1-6-1 Daiba, Minato City, Tokyo',
+  },
 };
 
 export function summarizeDay(day: ItineraryDay) {
@@ -179,6 +203,7 @@ export function formatTripDates(trip: Trip) {
 /** "13:00:00" → "01:00 PM". */
 export function formatTime(value: string) {
   const [h, m] = value.split(':').map(Number);
+  if (h === 24) return 'Midnight';
   const hour12 = h % 12 === 0 ? 12 : h % 12;
   return `${String(hour12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
